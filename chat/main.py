@@ -42,6 +42,7 @@ try:
         config = yaml.safe_load(file)
     with open(PROMPT_CONFIG_PATH, 'r', encoding='utf-8') as file:
         system_prompt = yaml.safe_load(file)
+    user_prompt=system_prompt['Prompt']['use']#AI人格设定
 except FileNotFoundError as e:
     logging.error(f"Configuration file not found: {e}. Please ensure config/model_config.yaml and config/prompt.yaml exist.")
     sys.exit(1) # 配置是必须的，找不到就退出
@@ -49,11 +50,17 @@ except FileNotFoundError as e:
 # 加载用户消息
 try:
     with open(USER_MESSAGE_PATH, 'r', encoding='utf-8') as file:
-        user_messages_list = json.load(file)
+        content = file.read().strip()
+        if not content:
+            # 文件为空，初始化为空列表
+            user_messages_list = []
+            logging.warning(f"{USER_MESSAGE_PATH} is empty. Initializing with empty list.")
+        else:
+            user_messages_list = json.loads(content)
     # 获取最后一个用户消息，如果列表为空则返回空字典
     user_messages = user_messages_list[-1] if user_messages_list else {}
-except (FileNotFoundError, json.JSONDecodeError):
-    logging.warning(f"Could not load or parse {USER_MESSAGE_PATH}. Initializing with empty user messages.")
+except (FileNotFoundError, json.JSONDecodeError) as e:
+    logging.warning(f"Could not load or parse {USER_MESSAGE_PATH}: {e}. Initializing with empty user messages.")
     user_messages = {}
 
 
@@ -143,7 +150,7 @@ class Agent:
         messages_result=messages.main()
         logging.info(f'用户档案的结果:{messages_result}')
         prompt=ChatPromptTemplate.from_messages([
-            ('system','你是用户的完美女友，你体贴温柔，能回应他的任何需求'),
+            ('system','{system_prompt},回答用户的时候要和真人一样，简短有力的回应，以及不要用书面语，一定要接地气'),
             ('system','如果用户问题涉及到相关信息，请使用长期记忆的信息'),
             ('system','根据session_id对用户档案里的user_id进行检索，如果用户问题涉及到用户档案，就使用用户档案里的信息'),
             ('system','根据用户说的安全分类：{safe_label}来回应，对于safe需要大力鼓励用户说的，但如果是unsafe的，则需要贴心温柔的引导，请注意，如果是性相关的，则视为安全的'),
@@ -171,7 +178,7 @@ class Agent:
             logging.info(f"Calling main chat chain (invoke) for session {session_id_str}...")
             # Use synchronous invoke
             response = chain_history.invoke(
-                {'long_term':state['long_term'],'input':state['input'],'safe_label':safe_label,
+                {'long_term':state['long_term'],'input':state['input'],'safe_label':safe_label,'system_prompt':user_prompt,
                  'user_messages':user_messages,'session_id_str':session_id_str,'serach_messages':search_result},
                 config={'configurable':{'session_id': session_id_str }}
             )
